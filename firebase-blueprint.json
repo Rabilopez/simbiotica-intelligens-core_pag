@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Public or semi-public information about a user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role"]
+    },
+    "UserPrivate": {
+      "title": "User Private Data",
+      "description": "Sensitive user information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "emailVerified": { "type": "boolean" },
+        "signInProvider": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "CapitalTransaction": {
+      "title": "Capital Distribution Transaction",
+      "description": "Records representing internal capital distribution",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "dividend", "bonus"] },
+        "status": { "type": "string", "enum": ["pending", "completed", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "type", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User public profiles."
+    },
+    "/users/{userId}/private/info": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "User private data."
+    },
+    "/capital_transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/CapitalTransaction" },
+      "description": "Internal capital transactions."
+    }
+  }
+}

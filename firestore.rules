@@ -1,0 +1,140 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} { 
+      allow read, write: if false; 
+    }
+
+    // Phase 3: Primitives
+    function isValidId(id) { 
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { 
+      return request.auth != null && request.auth.token.email_verified == true; 
+    }
+    
+    function isAdmin() { 
+      // Admin is the owner email for this architecture
+      return request.auth != null && request.auth.token.email == 'rabilopezz18@gmail.com'; 
+    }
+
+    // Validation Blueprints
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'role', 'createdAt']) &&
+             data.size() == 5 &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
+             data.displayName is string && data.displayName.size() <= 100 &&
+             data.role is string && (data.role == 'user' || data.role == 'admin') &&
+             (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['email', 'emailVerified', 'signInProvider']) &&
+             data.size() == 3 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.emailVerified is bool &&
+             data.signInProvider is string && data.signInProvider.size() <= 50;
+    }
+
+    function isValidCapitalTransaction(data) {
+      return data.keys().hasAll(['userId', 'amount', 'type', 'status', 'createdAt']) &&
+             data.size() == 5 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.amount is number &&
+             data.type is string && (data.type == 'deposit' || data.type == 'withdrawal' || data.type == 'dividend' || data.type == 'bonus') &&
+             data.status is string && (data.status == 'pending' || data.status == 'completed' || data.status == 'rejected') &&
+             data.createdAt is timestamp;
+    }
+
+    // Routes
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() && 
+                    isValidId(userId) && 
+                    userId == request.auth.uid &&
+                    isValidUser(incoming()) && 
+                    incoming().uid == request.auth.uid &&
+                    incoming().createdAt == request.time &&
+                    (incoming().role == 'user' || isAdmin()); // Users cannot bootstrap as admin unless they actually are admin
+                    
+      allow update: if isSignedIn() && 
+                    isValidId(userId) &&
+                    userId == request.auth.uid &&
+                    isValidUser(incoming()) &&
+                    // Immutable fields
+                    incoming().uid == existing().uid &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().role == existing().role && // Users cannot modify their own role
+                    (
+                      isAdmin() || // Admins can update anything within schema
+                      // Normal users can only update displayName and photoURL
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']))
+                    );
+    }
+
+    match /users/{userId}/private/info {
+      allow get: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || isAdmin());
+      // No lists allowed for private info
+      
+      allow create: if isSignedIn() && 
+                    isValidId(userId) && 
+                    userId == request.auth.uid &&
+                    isValidUserPrivate(incoming()) &&
+                    incoming().email == request.auth.token.email;
+                    
+      allow update: if isSignedIn() && 
+                    isValidId(userId) && 
+                    userId == request.auth.uid &&
+                    isValidUserPrivate(incoming()) &&
+                    incoming().email == existing().email && // Cannot change email dynamically without logic
+                    (
+                      isAdmin() ||
+                      incoming().diff(existing()).affectedKeys().hasOnly(['emailVerified', 'signInProvider'])
+                    );
+    }
+
+    match /capital_transactions/{transactionId} {
+      allow get: if isSignedIn() && isValidId(transactionId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && 
+                    isValidId(transactionId) &&
+                    isValidCapitalTransaction(incoming()) &&
+                    incoming().userId == request.auth.uid &&
+                    incoming().createdAt == request.time &&
+                    incoming().status == 'pending' && // users can only create 'pending' transactions
+                    (
+                      incoming().type == 'deposit' || incoming().type == 'withdrawal'
+                      // dividends and bonuses can only be created by admin or server
+                      || isAdmin()
+                    );
+                    
+      allow update: if isSignedIn() && 
+                    isValidId(transactionId) &&
+                    isValidCapitalTransaction(incoming()) &&
+                    incoming().userId == existing().userId &&
+                    incoming().type == existing().type &&
+                    incoming().amount == existing().amount &&
+                    incoming().createdAt == existing().createdAt &&
+                    (
+                      isAdmin() ||
+                      (
+                         // Non-admins can only cancel pending transactions
+                         existing().status == 'pending' &&
+                         incoming().status == 'rejected' &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+                      )
+                    );
+                    
+      allow delete: if isAdmin() && isValidId(transactionId);
+    }
+  }
+}
