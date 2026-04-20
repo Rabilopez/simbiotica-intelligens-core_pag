@@ -18,3 +18,23 @@ View your app in AI Studio: https://ai.studio/apps/257f88a9-0eb6-4de5-b999-c21a7
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+{
+  "system_core": {
+    "identity": "simbiótica intelligens",
+    "mode": "autonomous_deployment",
+    "latency_target": "< 200 bits"
+  },
+  "deployment_pipeline": {
+    "target": "AI Studio App",
+    "environment": "production",
+    "commands": [
+      "npm install",
+      "npm run build",
+      "gcloud app deploy"
+    ]
+  },
+  "integrity_check": {
+    "status": "active",
+    "sync": "real-time"
+  }
+}
